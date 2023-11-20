@@ -1,0 +1,3 @@
+mkdir ./old/ 2> /dev/null
+mv netcp ./old/netcp_"$(uuidgen -t)" 2> /dev/null
+g++-13 -o netcp -std=c++23 netcp.cc
