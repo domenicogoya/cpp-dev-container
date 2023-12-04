@@ -8,10 +8,8 @@
 
 #include <cstdlib>
 #include <cstring>
-//#include "experimentaliguess.hpp"
-//#include <experimental/scope>
-#include "expected.hpp"
-//#include <expected>
+#include <expected>
+#include <experimental/scope>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -172,26 +170,6 @@ std::error_code send_to(int sock_fd, const std::vector<uint8_t>& message,
   return std::error_code(0, std::system_category());
 }
 
-// Function that receives the file from an input
-int receive_from() {
-  // ...
-}
-
-// Function that writes a file to an output
-int write_file() {
-  // ...
-}
-
-// Function that sends the file through the socket
-std::error_code netcp_send_file(const std::string& filename) {
-  // ...
-}
-
-// Function that receives the file through the socket
-std::error_code netcp_receive_file(const std::string& filename) {
-  // ...
-}
-
 // Main function
 int main(int argc, char* argv[]) {
   // Parses options and check if no options are given
@@ -215,7 +193,7 @@ int main(int argc, char* argv[]) {
       std::experimental::scope_exit([file_fd] { close(file_fd); });
 
   // Checks that the file is not bigger than 1KB
-  stat st;
+  struct stat st;
   int file_size = fstat(file_fd, &st);
   if (file_size < 0) {
     std::cerr << "Error. File data could not be retrieved: "
@@ -238,7 +216,7 @@ int main(int argc, char* argv[]) {
       std::experimental::scope_exit([sock_fd] { close(sock_fd); });
 
   // Reads the file and sends the data
-  while (true) { // Correct infinite loop
+  while (true) {
     std::vector<uint8_t> buffer(1024);
     std::error_code error = read_file(file_fd, buffer);
     if (error) {

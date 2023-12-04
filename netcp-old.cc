@@ -45,7 +45,10 @@ std::optional<program_options> parse_args(int argc, char* argv[]) {
                      "with other arguments.\n";
       } else {
         options.input_filename = *it;
-        break;
+        if (it != end) {
+          std::cerr << "Warning. Only the first argument (INPUT FILENAME) will "
+                       "be taken.\n";
+        }
       }
     }
     return options;
@@ -54,7 +57,7 @@ std::optional<program_options> parse_args(int argc, char* argv[]) {
 
 // Function that reads the input file
 std::error_code read_file(int file_fd, std::vector<uint8_t>& buffer) {
-  // Resizes the buffer if it is shorter than 1KB checking the read bytes
+  // Resizes the buffer if it's shorter than 1KB checking the read bytes
   ssize_t bytes_read = read(file_fd, buffer.data(), buffer.size());
   // Returns error if the read operation returned any error
   if (bytes_read < 0) {
@@ -66,7 +69,7 @@ std::error_code read_file(int file_fd, std::vector<uint8_t>& buffer) {
 
 // Function that checks if the port is within the common range
 bool check_port(int port) {
-  // Returns if the user has entered an invalid port
+  // Checks if the user has entered an invalid port
   return port < 0 || port > 65535;
 }
 
@@ -77,7 +80,6 @@ std::optional<sockaddr_in> make_ip_address(
   // If the address is nullopt, the socket is in any ip address
   if (!ip_address) {
     sock_address.sin_addr.s_addr = INADDR_ANY;
-    sock_address.sin_port = htons(port);
   } else {
     // Checks if the format of the address is ip:port and creates 2 strings
     std::string ip_address_str = ip_address.value(),
@@ -97,17 +99,12 @@ std::optional<sockaddr_in> make_ip_address(
         if (port != 0) {
           return std::nullopt;
         }
-        sock_address.sin_port = htons(std::stoi(port_str));
       } else {
         return std::nullopt;
       }
     } else {
       // Checks if the ip address value is empty
       if (ip_address.value().empty()) {
-        return std::nullopt;
-      }
-      // Checks if the user has entered an invalid port
-      if (check_port(std::stoi(port_str))) {
         return std::nullopt;
       }
       // Converts the ip address to a valid format and checks if any error
@@ -141,55 +138,17 @@ std::string ip_address_to_string(const sockaddr_in& address) {
 // Function that creates the socket
 std::expected<int, std::error_code> make_socket(
     std::optional<sockaddr_in> address = std::nullopt) {
-  // Creates the socket
   int fd = socket(AF_INET, SOCK_DGRAM, 0);
   if (fd < 0) {
     return std::unexpected{std::error_code(errno, std::system_category())};
   }
-
-  // Assign the socket an address
-  int assign_address = bind(fd, reinterpret_cast<const sockaddr*>(&(*address)),
-                            sizeof(*address));
-  if (assign_address < 0) {
-    return std::unexpected{std::error_code(errno, std::system_category())};
-  }
-
   return fd;
 }
 
 // Function that sends the file through the socket
 std::error_code send_to(int sock_fd, const std::vector<uint8_t>& message,
                         const sockaddr_in& address) {
-  // Stores the number of sent bytes or if there was an error
-  ssize_t bytes_read =
-      sendto(sock_fd, message.data(), message.size(), 0,
-             reinterpret_cast<const sockaddr*>(&address), sizeof(address));
-  // Returns error if the read operation returned any error
-  if (bytes_read < 0) {
-    return std::error_code(errno, std::system_category());
-  }
-
   return std::error_code(0, std::system_category());
-}
-
-// Function that receives the file from an input
-int receive_from() {
-  // ...
-}
-
-// Function that writes a file to an output
-int write_file() {
-  // ...
-}
-
-// Function that sends the file through the socket
-std::error_code netcp_send_file(const std::string& filename) {
-  // ...
-}
-
-// Function that receives the file through the socket
-std::error_code netcp_receive_file(const std::string& filename) {
-  // ...
 }
 
 // Main function
@@ -210,55 +169,46 @@ int main(int argc, char* argv[]) {
               << std::endl;
     return EXIT_FAILURE;
   }
-  // Creates a variable that destroys the file_fd once they are done
-  auto file_guard =
-      std::experimental::scope_exit([file_fd] { close(file_fd); });
-
   // Checks that the file is not bigger than 1KB
-  stat st;
-  int file_size = fstat(file_fd, &st);
-  if (file_size < 0) {
+  struct stat st;
+  int result = fstat(file_fd, &st);
+  if (result < 0) {
     std::cerr << "Error. File data could not be retrieved: "
               << std::strerror(errno) << std::endl;
+    close(file_fd);
     return EXIT_FAILURE;
   }
+  if (st.st_size > 1024) {
+    std::cerr << "Error. File size cannot be bigger than 1KB.\n";
+    close(file_fd);
+    return EXIT_FAILURE;
+  }
+
+  // if (st.st_size > 1024) {
+  //   std::cerr << "Error. File size cannot be bigger than 1KB.\n";
+  //   return EXIT_FAILURE;
+  // }
 
   // Creates the socket
   auto address = make_ip_address("127.0.0.1", 8080);
-  auto sock_made = make_socket(address.value());
-  if (!sock_made) {
-    std::cerr << "Error. The socket could not be created: " << strerror(errno)
+  auto result = make_socket(address.value());
+  if (result) {
+    int sock_fd = *result;
+  }
+
+  // Sends the file
+  sockaddr_in remote_address = make_ip_address("127.0.0.1").value();
+  int bytes_sent = sendto(sock_fd, &buffer, &address);
+  if (bytes_sent < 0) {
+    std::cerr << "Error. File could not be send: " << std::strerror(errno)
               << std::endl;
+    close(file_fd);
+    close(sock_fd);
     return EXIT_FAILURE;
   }
-  int sock_fd = *sock_made;
 
-  // Creates a variable that destroys the sock_fd once they are done
-  auto sock_guard =
-      std::experimental::scope_exit([sock_fd] { close(sock_fd); });
-
-  // Reads the file and sends the data
-  while (true) { // Correct infinite loop
-    std::vector<uint8_t> buffer(1024);
-    std::error_code error = read_file(file_fd, buffer);
-    if (error) {
-      std::cerr << "Error. File could not be read: " << std::strerror(errno)
-                << std::endl;
-      return EXIT_FAILURE;
-    }
-
-    if (buffer.empty()) {
-      break;
-    }
-
-    auto send_file = send_to(sock_fd, buffer, *address);
-    if (send_file) {
-      std::cerr << "Error. File could not be send: " << std::strerror(errno)
-                << std::endl;
-      return EXIT_FAILURE;
-    }
-  }
-
-  // Ends the program
+  // Closes the file descriptors and ends the program
+  close(file_fd);
+  close(sock_fd);
   return EXIT_SUCCESS;
 }

@@ -8,10 +8,8 @@
 
 #include <cstdlib>
 #include <cstring>
-//#include "experimentaliguess.hpp"
-//#include <experimental/scope>
-#include "expected.hpp"
-//#include <expected>
+#include <expected>
+#include <experimental/scope>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -20,7 +18,12 @@
 // Struct that defines the program options
 struct program_options {
   bool show_help{false};
+  bool listen_mode{false};
   std::string input_filename;
+  bool command_mode{false};
+  std::vector<std::string> command_args;
+  bool redirect_in{false}; // Nada o -1
+  bool redirect_out{false}; // Nada o -2
 };
 
 // Function that shows the usage of the program
@@ -172,28 +175,75 @@ std::error_code send_to(int sock_fd, const std::vector<uint8_t>& message,
   return std::error_code(0, std::system_category());
 }
 
-// Function that receives the file from an input
-int receive_from() {
-  // ...
+std::optional<std::string> getenv(const std::string& name) {
+  getenv(name.c_str());
 }
 
-// Function that writes a file to an output
-int write_file() {
-  // ...
+std::atomic<bool> quit{false}; // Por problemas de concurrencia
+
+int netcp_listen() {
+  // If command_mode
+  //  subprocess command(command_args, subprocess::stdio::in)
+  //  command_exec() // fork() exec()
+  //  fd = command.stdin_fd()
+  // else
+  // Abrir archivo destino filename
+  // source_address = make_ip_address(std:nullopt, port)
+  // make_socket(source_address)
+
+  while (!buffer.empty() && !quit) {
+    receive_from(buffer, source_address); // -1 errno = EINTR
+    write_file(buffer); // Si el tamaño es 0, terminar
+  }
+
+int netcp_sender() {
+  // If command_mode
+  //  subprocess command(command_args, subprocess::stdio::out (-1) subprocess::stdio::err (-2) subprocess::stdio::outerr (-1) (-2))
+  //  command_exec() // fork() exec()
+  //  fd = command.stdout_fd()
+  // else
+  //  Abrir archivo input
+
+  // make socket()
+  // remote_address = make_ip_address(ip_address, port)
+
+  while (!buffer.empty() && !quit) {
+    // read_file(buffer);
+    // send_to(buffer, remote_address);
+  }
+
+  // NOTA: Cerrar el socket y el archivo
+
+  return EXIT_SUCCESS;
 }
 
-// Function that sends the file through the socket
-std::error_code netcp_send_file(const std::string& filename) {
-  // ...
-}
-
-// Function that receives the file through the socket
-std::error_code netcp_receive_file(const std::string& filename) {
-  // ...
+void signal_handler(int signal) {
+  //write(STDOUT_FILENO, "Signal received\n", 16)
+  write(STDOUT_FILENO, message,...)
+  quit = true;
 }
 
 // Main function
 int main(int argc, char* argv[]) {
+  // Interceptar señales
+  struct sigaction signal_action();
+  signal_action.sa_handler = &signal_handler;
+  sigaction(SIGHUP, &signal_action, NULL);
+  sigaction(SIGTERM, &signal_action, NULL);
+  sigaction(SIGINT, &signal_action, NULL);
+
+
+  // Parsear linea de comandos: "h" "l" "filename"
+  // Leer variables de entorno
+  // port = getenv("NETCP_PORT"); si la variable existe, si no, 8080 -> port = existe "NETCP_PORT" ? "NETCP_PORT" : "8080"
+  // getenv("NETCP_IP");  -> port = existe "NETCP_IP" ? "NETCP_IP" : "127.0.0.1" // Ignorar en modo listen
+
+  if (program_options.listen_mode) {
+    return netcp_listen();
+  } else {
+    return netcp_sender();
+  }
+
   // Parses options and check if no options are given
   auto options = parse_args(argc, argv);
   if (!options) {
@@ -207,7 +257,9 @@ int main(int argc, char* argv[]) {
   int file_fd = open(options.value().input_filename.c_str(), O_RDONLY);
   if (file_fd < 0) {
     std::cerr << "Error. File could not be opened: " << std::strerror(errno)
-              << std::endl;
+              << std::endl;   if (buffer.empty()) {
+      break;
+    }
     return EXIT_FAILURE;
   }
   // Creates a variable that destroys the file_fd once they are done
@@ -215,7 +267,7 @@ int main(int argc, char* argv[]) {
       std::experimental::scope_exit([file_fd] { close(file_fd); });
 
   // Checks that the file is not bigger than 1KB
-  stat st;
+  struct stat st;
   int file_size = fstat(file_fd, &st);
   if (file_size < 0) {
     std::cerr << "Error. File data could not be retrieved: "
@@ -232,13 +284,15 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
   int sock_fd = *sock_made;
-
+   if (buffer.empty()) {
+      break;
+    }
   // Creates a variable that destroys the sock_fd once they are done
   auto sock_guard =
       std::experimental::scope_exit([sock_fd] { close(sock_fd); });
 
   // Reads the file and sends the data
-  while (true) { // Correct infinite loop
+  while (true) {
     std::vector<uint8_t> buffer(1024);
     std::error_code error = read_file(file_fd, buffer);
     if (error) {

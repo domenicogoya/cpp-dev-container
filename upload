@@ -1,0 +1,9 @@
+#!/bin/bash
+
+comment="$1"
+git add .
+if [ -z "$1" ]; then
+  comment="Minor changes."
+fi
+git commit -m "$comment"
+git push
