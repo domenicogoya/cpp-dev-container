@@ -215,7 +215,7 @@ int main(int argc, char* argv[]) {
       std::experimental::scope_exit([file_fd] { close(file_fd); });
 
   // Checks that the file is not bigger than 1KB
-  stat st;
+  struct stat st;
   int file_size = fstat(file_fd, &st);
   if (file_size < 0) {
     std::cerr << "Error. File data could not be retrieved: "
